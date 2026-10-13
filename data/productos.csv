@@ -1,0 +1,11 @@
+id_producto,nombre_producto,categoria,precio_unitario
+PROD_01,Notebook Gamer 15.6,Tecnologia,1250000.0
+PROD_02,Monitor 27 Pulgadas 144Hz,Tecnologia,340000.0
+PROD_03,Teclado Mecanico RGB,Perifericos,75000.0
+PROD_04,Mouse Inalambrico Ergonomico,Perifericos,42000.0
+PROD_05,Auriculares Bluetooth Cancelacion Ruido,Audio,115000.0
+PROD_06,Silla Ergonomica de Oficina,Mobiliario,280000.0
+PROD_07,Escritorio Elevable Electrico,Mobiliario,490000.0
+PROD_08,Camara Web Full HD,Perifericos,58000.0
+PROD_09,Parlante Portatil Resistente al Agua,Audio,89000.0
+PROD_10,Disco Solido SSD NVMe 1TB,Tecnologia,110000.0
