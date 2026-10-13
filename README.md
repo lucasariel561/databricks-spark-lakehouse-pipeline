@@ -1,7 +1,7 @@
 # Trabajo Práctico: Introducción a Databricks y Procesamiento con Apache Spark
 **Materia:** Análisis de Datos en la Nube  
 **Docente:** Prof. Luis A. Chiaramonte  
-**Alumnos / Integrantes:** [Completar con Nombres y Apellidos]  
+**Alumnos / Integrantes:** Melocchi Sol, Olaiz Bruno, Rojas Augusto, Vicino Lucas  
 **Plataforma utilizada:** Databricks Community Edition (Apache Spark 3.x / 4.x + Delta Lake)
 
 ---
