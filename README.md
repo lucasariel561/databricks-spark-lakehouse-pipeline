@@ -24,6 +24,7 @@ databricks-spark-lakehouse-pipeline/
 │   └── productos.csv              # Catálogo de 10 productos con nombre, categoría y precio
 │
 ├── notebook_databricks_tp.ipynb   # Notebook en formato Jupyter, listo para importar en Databricks
+├── notebook_databricks_tp_resultados.html  # Notebook ejecutado en Databricks, con resultados y gráficos
 ├── notebook_databricks_source.py  # Mismo notebook en formato fuente de Databricks (%md, %sql)
 └── README.md                      # Este documento
 ```
@@ -68,6 +69,8 @@ Además armamos un **gráfico de barras** (facturación por categoría) y un **g
 ---
 
 ## 4. Resultados
+
+El notebook se ejecutó completo en Databricks Free Edition. Todas las salidas (tablas, validaciones, historial de la tabla Delta y gráficos) se pueden ver descargando y abriendo en el navegador el archivo `notebook_databricks_tp_resultados.html`.
 
 | Categoría | Operaciones | Unidades | Facturación | % |
 |---|---|---|---|---|

@@ -214,17 +214,31 @@ total_delta = df_delta.agg(F.sum("total_venta")).first()[0]
 
 print(f"Filas:       origen = {filas_origen} | Delta = {filas_delta}")
 print(f"Facturación: origen = {total_origen:,.2f} | Delta = {total_delta:,.2f}")
-print(f"Mismo esquema: {df_transformado.schema == df_delta.schema}")
+# Comparamos nombres y tipos de las columnas (Delta puede cambiar si una columna admite nulos, eso no afecta los datos)
+columnas_origen = [(c.name, c.dataType.simpleString()) for c in df_transformado.schema]
+columnas_delta = [(c.name, c.dataType.simpleString()) for c in df_delta.schema]
+print(f"Mismas columnas y tipos: {columnas_origen == columnas_delta}")
 
 assert filas_origen == filas_delta, "La cantidad de filas no coincide"
 assert round(total_origen, 2) == round(total_delta, 2), "La facturación no coincide"
+assert columnas_origen == columnas_delta, "El esquema no coincide"
 print("Validación correcta: los datos leídos desde Delta son iguales a los que se guardaron.")
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Time travel
-# MAGIC Para probar el historial de versiones simulamos un error: borramos por equivocación las ventas de la categoría Audio. Después consultamos la versión anterior y restauramos la tabla.
+# MAGIC Para probar el historial de versiones simulamos un error: borramos por equivocación las ventas de la categoría Audio. Antes del borrado anotamos el número de versión de la tabla, para después poder consultarla y restaurarla.
+
+# COMMAND ----------
+
+def ultima_version(tabla):
+    """Devuelve el número de la versión más reciente de una tabla Delta."""
+    return spark.sql(f"DESCRIBE HISTORY {tabla}").agg(F.max("version")).first()[0]
+
+# Anotamos la versión actual (la tabla correcta, con las 20 ventas)
+version_correcta = ultima_version(tabla_delta)
+print(f"Versión antes del error: {version_correcta} | filas: {spark.read.table(tabla_delta).count()}")
 
 # COMMAND ----------
 
@@ -235,24 +249,25 @@ print("Validación correcta: los datos leídos desde Delta son iguales a los que
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC -- Historial de la tabla: cada operación quedó registrada como una versión
+# MAGIC -- Historial de la tabla: cada operación quedó registrada como una versión.
+# MAGIC -- Puede aparecer alguna operación automática de optimización que hace Databricks por su cuenta.
 # MAGIC DESCRIBE HISTORY workspace.default.ventas_transformadas;
 
 # COMMAND ----------
 
-# Comparamos la versión actual con la anterior al borrado
-historial = spark.sql(f"DESCRIBE HISTORY {tabla_delta}").orderBy(F.desc("version")).collect()
-version_actual = historial[0]["version"]
-version_anterior = historial[1]["version"]
-
+# Comparamos la tabla actual (después del borrado) con la versión anotada antes del error
 filas_ahora = spark.read.table(tabla_delta).count()
-filas_antes_del_error = spark.sql(f"SELECT * FROM {tabla_delta} VERSION AS OF {version_anterior}").count()
-print(f"Versión {version_actual} (después del DELETE): {filas_ahora} filas")
-print(f"Versión {version_anterior} (antes del DELETE):  {filas_antes_del_error} filas")
+filas_version_correcta = spark.sql(f"SELECT * FROM {tabla_delta} VERSION AS OF {version_correcta}").count()
+print(f"Tabla actual (después del DELETE): {filas_ahora} filas")
+print(f"Versión {version_correcta} (antes del DELETE): {filas_version_correcta} filas")
 
 # Restauramos la tabla a la versión anterior al error
-spark.sql(f"RESTORE TABLE {tabla_delta} TO VERSION AS OF {version_anterior}")
-print(f"Tabla restaurada. Filas actuales: {spark.read.table(tabla_delta).count()}")
+spark.sql(f"RESTORE TABLE {tabla_delta} TO VERSION AS OF {version_correcta}")
+filas_restauradas = spark.read.table(tabla_delta).count()
+print(f"Tabla restaurada a la versión {version_correcta}. Filas actuales: {filas_restauradas}")
+
+assert filas_restauradas == filas_delta, "La restauración no recuperó todas las filas"
+print("Time travel correcto: la tabla volvió a tener todas las ventas.")
 
 # COMMAND ----------
 
