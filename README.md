@@ -2,30 +2,30 @@
 **Materia:** Análisis de Datos en la Nube  
 **Docente:** Prof. Luis A. Chiaramonte  
 **Alumnos / Integrantes:** Melocchi Sol, Olaiz Bruno, Rojas Augusto, Vicino Lucas  
-**Plataforma utilizada:** Databricks Community Edition (Apache Spark 3.x / 4.x + Delta Lake)
+**Plataforma utilizada:** Databricks Free Edition (cómputo serverless, Unity Catalog y Delta Lake)
 
 ---
 
 ## 1. Resumen del Proyecto
 
-En este trabajo práctico implementamos un proceso ETL (Extracción, Transformación y Carga) básico de extremo a extremo utilizando **Databricks Community Edition** y **Apache Spark**. 
+En este trabajo práctico implementamos un proceso ETL (Extracción, Transformación y Carga) de extremo a extremo con **Databricks Free Edition** y **Apache Spark**.
 
-Para la práctica elegimos un caso real de comercio electrónico: analizamos las ventas de una tienda y las cruzamos con su catálogo de productos. A lo largo del notebook limpiamos registros corruptos y nulos, realizamos cruces de tablas (`joins`), calculamos márgenes de facturación y persistimos los datos procesados en **Delta Lake**, validando su integridad mediante consultas con **Spark SQL**.
+Usamos un caso de comercio electrónico: analizamos las ventas de una tienda y las cruzamos con su catálogo de productos. En el notebook exploramos los datos con PySpark y Spark SQL, eliminamos duplicados y completamos nulos, cruzamos las tablas con un `join`, calculamos la facturación de cada venta, guardamos el resultado en **Delta Lake**, validamos su integridad, probamos el *time travel* y analizamos los resultados con consultas SQL y gráficos.
 
 ---
 
 ## 2. Estructura del Repositorio
 
 ```text
-tp-databricks-spark/
+databricks-spark-lakehouse-pipeline/
 │
 ├── data/
-│   ├── ventas.csv                 # Registro transaccional de ventas (fechas, cantidades, descuentos)
-│   └── productos.csv              # Catálogo con nombres, categorías y precios unitarios
+│   ├── ventas.csv                 # 22 registros de ventas (fecha, producto, cliente, cantidad, descuento)
+│   └── productos.csv              # Catálogo de 10 productos con nombre, categoría y precio
 │
-├── notebook_databricks_tp.ipynb   # Notebook estándar (formato Jupyter, listo para importar en Databricks)
-├── notebook_databricks_source.py  # Código fuente nativo de Databricks con celdas %python, %sql y %md
-└── README.md                      # Documentación y descripción del entregable
+├── notebook_databricks_tp.ipynb   # Notebook en formato Jupyter, listo para importar en Databricks
+├── notebook_databricks_source.py  # Mismo notebook en formato fuente de Databricks (%md, %sql)
+└── README.md                      # Este documento
 ```
 
 ---
@@ -33,54 +33,77 @@ tp-databricks-spark/
 ## 3. Desarrollo del Pipeline (Etapa por Etapa)
 
 ### Etapa 1: Configuración del entorno
-* Creamos una cuenta gratuita en **Databricks Community Edition**.
-* Levantamos un clúster estándar de prueba con un solo nodo (Driver) y creamos un notebook asociado.
-* Verificamos el acceso a la sesión predeterminada de Spark (`spark.version`).
+* Creamos una cuenta gratuita en **Databricks Free Edition** e importamos el notebook.
+* Free Edition usa cómputo **serverless**: no hace falta crear un clúster, el notebook se conecta solo al ejecutar la primera celda.
+* Verificamos la sesión de Spark (`spark.version`) y creamos un volumen de Unity Catalog (`workspace.default.tp7`) donde subimos los CSV.
 
 ### Etapa 2: Carga y exploración de datos
-* Subimos los archivos `ventas.csv` y `productos.csv` al almacenamiento de Databricks (DBFS).
-* Leímos los archivos con `spark.read.format("csv")` utilizando `header=True` e inferencia automática de esquemas (`inferSchema=True`).
-* Inspeccionamos las primeras filas con `display()` y revisamos los tipos de datos inferidos con `printSchema()`.
+* Leímos los archivos con `spark.read.format("csv")` usando `header=True` e `inferSchema=True`.
+* Mostramos las primeras filas con `display()` y los tipos de datos con `printSchema()`.
+* Registramos las tablas crudas como vistas temporales y las exploramos con **Spark SQL**: cantidad de filas, ventas duplicadas, descuentos nulos, rango de fechas y productos por categoría.
 
-### Etapa 3: Transformaciones y limpieza (Data Cleansing)
-Durante la exploración detectamos dos problemas habituales en los datos de origen:
-1. **Registros duplicados:** Había transacciones repetidas cargadas dos veces por error. Las eliminamos utilizando `dropDuplicates(["id_venta"])`.
-2. **Valores nulos en descuentos:** Algunas compras no tenían cargado el porcentaje de descuento. Los rellenamos con `0.0` mediante `fillna()`, asumiendo que correspondían a ventas sin promoción.
-3. **Cruce de tablas (Join):** Realizamos un `inner join` entre las ventas y los productos vinculándolos por `id_producto`. De esta manera, cada venta quedó enriquecida con el nombre del producto, su categoría y su precio real de lista.
-4. **Columnas calculadas:** 
-   * `subtotal` = `cantidad * precio_unitario`
-   * `monto_descuento` = `subtotal * descuento`
-   * `total_venta` = `subtotal - monto_descuento`
+### Etapa 3: Transformaciones de datos
+La exploración mostró dos problemas en las ventas:
+1. **Duplicados:** las ventas `VTA_101` y `VTA_107` estaban cargadas dos veces. Las eliminamos con `dropDuplicates(["id_venta"])` (de 22 filas quedaron 20).
+2. **Nulos:** tres ventas no tenían descuento. Los completamos con `0.0` mediante `fillna()`, asumiendo que fueron ventas sin promoción.
 
-### Etapa 4: Almacenamiento optimizado con Delta Lake
-Guardamos el DataFrame resultante en formato **Delta Lake** (`format("delta")`). 
-Elegimos Delta Lake frente al almacenamiento tradicional en CSV o Parquet por sus ventajas clave:
-* **Garantía de transacciones ACID:** Asegura que no queden archivos a medio escribir si el clúster falla durante la escritura.
-* **Capacidad de Time Travel:** Permite consultar versiones históricas de la tabla en caso de necesitar auditar o recuperar datos.
-* **Validación de integridad:** Volvimos a leer la tabla directamente desde la ruta Delta para constatar que el esquema y la cantidad de filas persistidas fueran exactamente las mismas.
+Después:
+3. **Join:** cruzamos ventas y productos por `id_producto` (`inner join`) para obtener nombre, categoría y precio de cada venta.
+4. **Columnas calculadas:** `subtotal = cantidad * precio_unitario`, `monto_descuento = subtotal * descuento`, `total_venta = subtotal - monto_descuento` y `mes` (año y mes de la venta).
+5. **Filtro y agregación:** filtramos las ventas con descuento y agrupamos por categoría.
 
-### Etapa 5: Consultas con Spark SQL y Visualización
-Registramos la tabla Delta como una vista temporal (`createOrReplaceTempView("vista_ventas")`) para poder explotar el motor de **Spark SQL** con sentencias tradicionales (`%sql`):
-* Calculamos la facturación acumulada y cantidad de pedidos por categoría de producto.
-* Identificamos el Top 3 de productos con mayor recaudación de la tienda.
-* Generamos un gráfico de barras comparativo mostrando la distribución del ingreso por categoría.
+### Etapa 4: Almacenamiento con Delta Lake
+* Guardamos el resultado como tabla Delta administrada por Unity Catalog: `workspace.default.ventas_transformadas`.
+* **Validación de integridad:** volvimos a leer la tabla y comprobamos que coincidieran la cantidad de filas, la facturación total y el esquema.
+* **Time travel:** simulamos un error borrando las ventas de Audio, consultamos el historial con `DESCRIBE HISTORY`, leímos la versión anterior al borrado y restauramos la tabla con `RESTORE TABLE`.
 
----
+### Etapa 5: Visualización y análisis
+Con Spark SQL sobre la tabla Delta calculamos:
+* Facturación, operaciones y unidades por categoría, con el porcentaje de cada una.
+* El top 3 de productos con mayor recaudación.
+* La evolución mensual de la facturación.
 
-## 4. Conclusiones del Trabajo
-
-1. **Eficiencia de Databricks:** La plataforma simplifica notablemente la curva de aprendizaje al eliminar la necesidad de configurar máquinas virtuales, instalar Java o administrar nodos manualmente. En pocos clics se dispone de un clúster funcional y un entorno colaborativo.
-2. **Flexibilidad políglota:** Poder combinar celdas de Python con consultas nativas en SQL dentro del mismo cuaderno permite que perfiles de ingeniería y analistas de negocio trabajen sobre la misma fuente de datos sin barreras de lenguaje.
-3. **Confiabilidad con Delta Lake:** En un pipeline de producción es fundamental contar con capas de calidad como Delta Lake para garantizar que las transformaciones queden blindadas ante caídas y con control de versiones.
-4. **Hallazgo del análisis:** La categoría **Tecnología** concentra el mayor volumen de facturación total de la tienda (impulsada principalmente por la venta de computadoras portátiles), a pesar de que la categoría **Periféricos** registra una mayor cantidad de transacciones individuales de menor valor.
+Además armamos un **gráfico de barras** (facturación por categoría) y un **gráfico de líneas** (facturación por mes).
 
 ---
 
-## 5. Cómo Importar y Ejecutar el Notebook en Databricks
+## 4. Resultados
 
-1. Ingresar a [Databricks Community Edition](https://community.cloud.databricks.com/).
-2. Ir a la sección **Compute** y crear un clúster (tarda unos 2 a 3 minutos en iniciar).
-3. En la barra lateral, ir a **Workspace** -> **Users** -> Tu usuario.
-4. Hacer clic con el botón derecho, seleccionar **Import** y subir el archivo `notebook_databricks_tp.ipynb` (o `notebook_databricks_source.py`).
-5. En la sección **Catalog** / **Create Table**, subir los dos archivos de la carpeta `data/` (`ventas.csv` y `productos.csv`).
-6. Asociar el clúster al notebook y ejecutar las celdas en orden con `Shift + Enter` o **Run All**.
+| Categoría | Operaciones | Unidades | Facturación | % |
+|---|---|---|---|---|
+| Tecnología | 7 | 13 | $6.402.500 | 72 % |
+| Mobiliario | 4 | 4 | $1.449.000 | 16 % |
+| Periféricos | 6 | 12 | $657.950 | 7 % |
+| Audio | 3 | 4 | $411.000 | 5 % |
+| **Total** | **20** | **33** | **$8.920.450** | |
+
+| Mes | Facturación |
+|---|---|
+| 2024-01 | $2.143.900 |
+| 2024-02 | $3.533.250 |
+| 2024-03 | $3.243.300 |
+
+---
+
+## 5. Conclusiones
+
+**Sobre los datos**
+1. **Tecnología es la categoría principal en todos los indicadores:** tiene más ventas (7), más unidades (13) y el 72 % de la facturación. El producto que más recaudó es la Notebook Gamer 15.6 ($4.812.500 en 4 unidades).
+2. **Periféricos tiene casi tantas ventas como Tecnología pero factura mucho menos** (7 %), porque son productos baratos. Mobiliario, con solo 4 ventas, factura más del doble que Periféricos.
+3. **Febrero fue el mejor mes** ($3.533.250, 40 % del total) y el de más ventas (9).
+4. **La limpieza cambió los resultados:** sin eliminar los 2 duplicados, la facturación habría quedado inflada en $2.437.500 (27 % más), porque los registros repetidos eran ventas de notebooks.
+
+**Sobre la plataforma**
+1. Databricks evita instalar y configurar Spark: con el cómputo serverless alcanza con abrir el notebook y ejecutar.
+2. En un mismo notebook combinamos Python, SQL y texto explicativo.
+3. Delta Lake protege los datos con transacciones ACID y, como vimos con el time travel, permite recuperar una tabla después de un borrado por error.
+
+---
+
+## 6. Cómo ejecutar el notebook en Databricks Free Edition
+
+1. Crear una cuenta gratuita en [Databricks Free Edition](https://www.databricks.com/learn/free-edition).
+2. Ir a **Workspace → Home**, hacer clic en los tres puntos (o clic derecho) → **Import** y subir `notebook_databricks_tp.ipynb` (o `notebook_databricks_source.py`).
+3. Abrir el notebook y ejecutar las celdas de la Etapa 1 hasta el `CREATE VOLUME`.
+4. Ir a **Catalog → workspace → default → Volumes → tp7 → Upload to this volume** y subir `ventas.csv` y `productos.csv` de la carpeta `data/`.
+5. Volver al notebook y ejecutar todo con **Run all**.
